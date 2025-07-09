@@ -1,0 +1,25 @@
+{
+    "total_items_in_file": 200,
+    "parsing_success_rate": 0.905,
+    "items_with_failed_parsing": 19,
+    "overall": {
+        "evaluated_items": 181,
+        "average_precision": 0.2137,
+        "average_recall": 0.191,
+        "average_f1_score": 0.1864
+    },
+    "by_problem_type": {
+        "bfs": {
+            "evaluated_items": 84,
+            "average_precision": 0.179,
+            "average_recall": 0.1871,
+            "average_f1_score": 0.1624
+        },
+        "parents": {
+            "evaluated_items": 97,
+            "average_precision": 0.2438,
+            "average_recall": 0.1944,
+            "average_f1_score": 0.2072
+        }
+    }
+}

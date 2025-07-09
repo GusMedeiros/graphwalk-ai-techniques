@@ -16,8 +16,5 @@
         "recall": 1.0,
         "f1_score": 1.0,
         "count": 1150
-    },
-    "outliers": {
-        "count": 0
     }
 }
