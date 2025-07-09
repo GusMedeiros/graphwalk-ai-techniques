@@ -2,6 +2,7 @@ import os
 import json
 import random
 import torch
+import re  # Importado para a função de parsing
 from transformers import pipeline, AutoTokenizer, BitsAndBytesConfig
 from datasets import load_dataset
 import time
@@ -18,14 +19,27 @@ INDICES_PARENTS_FILE = "indices_parents.json"
 INDICES_BFS_FILE = "indices_bfs.json"
 
 
-# --- 2. FUNÇÕES DE ESTADO E INICIALIZAÇÃO ---
+# --- 2. FUNÇÕES DE UTILIDADE E ESTADO ---
+
+def is_output_parsable(output_str: str) -> bool:
+    """
+    Verifica se a saída do modelo contém o formato esperado 'Final Answer: [...]'.
+    Retorna True se o formato for encontrado, False caso contrário.
+    Esta é a verificação chave para descartar respostas truncadas.
+    """
+    # Regex para encontrar 'Final Answer:', seguido opcionalmente por espaços, e colchetes.
+    # Usamos re.search pois só precisamos saber se o padrão existe, não extrair o conteúdo.
+    return bool(re.search(r"Final Answer:\s*\[.*?\]", output_str, re.DOTALL))
+
+
 def initialize_state_and_indices():
     print("Verificando estado e arquivos de índice...")
-    if os.path.exists(INDICES_PARENTS_FILE) and os.path.exists(STATE_FILE):
-        print("Arquivos de estado encontrados. O script será retomado.")
+    # Condição simplificada para verificar se a retomada é possível
+    if os.path.exists(STATE_FILE) and os.path.exists(INDICES_PARENTS_FILE) and os.path.exists(INDICES_BFS_FILE):
+        print("Arquivos de estado e índices encontrados. O script será retomado.")
         return
 
-    print("Nenhum estado anterior encontrado. Iniciando do zero.")
+    print("Nenhum estado anterior encontrado ou arquivos de índice ausentes. Iniciando do zero.")
     print("Carregando dataset (pode levar um momento)...")
     dataset = load_dataset(DATASET_NAME, split="train")
 
@@ -69,12 +83,14 @@ def load_state():
 def save_state(state, results):
     with open(STATE_FILE, 'w') as f:
         json.dump(state, f, indent=4)
-    with open(RESULTS_FILE, 'w') as f:
-        json.dump(results, f, indent=4)
+    # Usar ensure_ascii=False para garantir a correta serialização de prompts com caracteres especiais
+    with open(RESULTS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=4, ensure_ascii=False)
 
 
-# --- 3. FUNÇÃO DE PROCESSAMENTO PRINCIPAL ---
+# --- 3. FUNÇÃO DE PROCESSAMENTO ---
 def process_item(pipe, tokenizer, context_window, dataset, index, problem_type):
+    # (Esta função permanece a mesma, pois sua responsabilidade é apenas gerar o output)
     prompt_text = dataset[int(index)]['prompt']
     messages = [{"role": "user", "content": prompt_text}]
 
@@ -82,7 +98,7 @@ def process_item(pipe, tokenizer, context_window, dataset, index, problem_type):
         input_ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True)
         prompt_token_count = len(input_ids)
 
-        if prompt_token_count > context_window:
+        if prompt_token_count >= context_window:
             print(
                 f"    -> PRÉ-VERIFICAÇÃO FALHOU: Prompt tem {prompt_token_count} tokens, excede a janela de {context_window}. Pulando.")
             return None
@@ -90,13 +106,12 @@ def process_item(pipe, tokenizer, context_window, dataset, index, problem_type):
         print(f"    -> PRÉ-VERIFICAÇÃO FALHOU: Erro inesperado durante a tokenização: {e}")
         return None
 
-    print(f"    -> PRÉ-VERIFICAÇÃO OK: Prompt com {prompt_token_count} tokens. Apostando na execução...")
+    print(f"    -> PRÉ-VERIFICAÇÃO OK: Prompt com {prompt_token_count} tokens. Gerando resposta...")
     try:
         terminators = [
             pipe.tokenizer.eos_token_id,
             pipe.tokenizer.convert_tokens_to_ids("<|eot_id|>")
         ]
-
         outputs = pipe(
             messages,
             max_new_tokens=MAX_NEW_TOKENS,
@@ -105,20 +120,19 @@ def process_item(pipe, tokenizer, context_window, dataset, index, problem_type):
             temperature=0.6,
             top_p=0.9,
         )
-
         generated_text = outputs[0]['generated_text'][-1]['content']
-
         return {
             "problem_type": problem_type,
             "prompt": prompt_text,
-            "output": generated_text
+            "output": generated_text,
+            "original_dataset_index": int(index)  # Adicionado para melhor rastreabilidade
         }
     except Exception as e:
-        print(f"    -> EXECUÇÃO FALHOU: A 'aposta' não deu certo. Erro durante a inferência: {e}")
+        print(f"    -> EXECUÇÃO FALHOU: Erro durante a inferência: {e}")
         return None
 
 
-# --- 4. ORQUESTRADOR / LOOP PRINCIPAL ---
+# --- 4. ORQUESTRADOR / LOOP PRINCIPAL (LÓGICA ATUALIZADA) ---
 def main():
     initialize_state_and_indices()
     state, results, indices_parents, indices_bfs = load_state()
@@ -139,24 +153,26 @@ def main():
     full_dataset = load_dataset(DATASET_NAME, split="train")
 
     while True:
+        # A contagem agora reflete apenas as amostras VÁLIDAS salvas em results.json
         counts = {'parents': 0, 'bfs': 0}
         for res in results:
             counts[res['problem_type']] += 1
 
         print(
-            f"Progresso: Parents [{counts['parents']}/{TARGET_SAMPLES_PER_TYPE}] | BFS [{counts['bfs']}/{TARGET_SAMPLES_PER_TYPE}]")
+            f"\nProgresso VÁLIDO: Parents [{counts['parents']}/{TARGET_SAMPLES_PER_TYPE}] | BFS [{counts['bfs']}/{TARGET_SAMPLES_PER_TYPE}]")
 
         if counts['parents'] >= TARGET_SAMPLES_PER_TYPE and counts['bfs'] >= TARGET_SAMPLES_PER_TYPE:
-            print("\nMeta de coleta atingida para ambos os tipos!")
+            print("\nMeta de coleta de amostras VÁLIDAS atingida para ambos os tipos!")
             break
 
-        ptr_parents = state['pointers']['parents']
-        ptr_bfs = state['pointers']['bfs']
-
+        # Decide qual tipo processar
         process_parents = counts['parents'] < TARGET_SAMPLES_PER_TYPE
         process_bfs = counts['bfs'] < TARGET_SAMPLES_PER_TYPE
 
         if not process_parents and not process_bfs: break
+
+        ptr_parents = state['pointers']['parents']
+        ptr_bfs = state['pointers']['bfs']
 
         if process_parents and (not process_bfs or ptr_parents <= ptr_bfs):
             current_type = 'parents'
@@ -164,37 +180,48 @@ def main():
         elif process_bfs:
             current_type = 'bfs'
             indices_list = indices_bfs
-        else:
+        else:  # Segurança, caso ambos os tipos terminem ao mesmo tempo
             break
 
         current_pointer = state['pointers'][current_type]
 
         if current_pointer >= len(indices_list):
-            print(f"AVISO: Esgotados todos os exemplos para o tipo '{current_type}' antes de atingir a meta.")
-            if current_type == 'parents': state['pointers']['parents'] = float('inf')
-            if current_type == 'bfs': state['pointers']['bfs'] = float('inf')
+            print(
+                f"AVISO: Esgotados todos os exemplos do dataset para o tipo '{current_type}' antes de atingir a meta.")
+            # Marca como infinito para não tentar processar este tipo novamente
+            if state['pointers'][current_type] != float('inf'):
+                state['pointers'][current_type] = float('inf')
+                save_state(state, results)
             continue
 
         dataset_index_to_process = indices_list[current_pointer]
         print(
-            f"\nProcessando tipo '{current_type}', ponteiro {current_pointer}, índice do dataset {dataset_index_to_process}...")
+            f"Processando tipo '{current_type}', ponteiro {current_pointer}, índice do dataset {dataset_index_to_process}...")
 
+        # Gera a resposta do modelo
         result = process_item(pipe, tokenizer, context_window, full_dataset, dataset_index_to_process, current_type)
 
+        # SEMPRE avança o ponteiro, independentemente do resultado, para não processar o mesmo item novamente.
         state['pointers'][current_type] += 1
 
         if result:
-            print("    -> SUCESSO: Amostra coletada.")
-            results.append(result)
+            # >>> AQUI ESTÁ A LÓGICA CHAVE <<<
+            # Verifica se a saída gerada é parsável ANTES de salvá-la
+            if is_output_parsable(result['output']):
+                print("    -> SUCESSO & PARSÁVEL: Amostra válida coletada.")
+                results.append(result)
+            else:
+                print("    -> FALHA NO PARSING: A resposta do modelo está malformada ou truncada. Descartando amostra.")
 
+        # Salva o estado (ponteiros atualizados e 'results' se uma amostra válida foi adicionada)
         save_state(state, results)
 
     print("\n--- Coleta Finalizada ---")
-    print(f"Total de amostras salvas em {RESULTS_FILE}: {len(results)}")
+    print(f"Total de amostras VÁLIDAS salvas em {RESULTS_FILE}: {len(results)}")
 
 
 if __name__ == "__main__":
     try:
         main()
     except KeyboardInterrupt:
-        print("\nProcesso interrompido pelo usuário. O estado foi salvo e pode ser retomado.")
+        print("\nProcesso interrompido pelo usuário. O estado atual foi salvo e pode ser retomado na próxima execução.")
