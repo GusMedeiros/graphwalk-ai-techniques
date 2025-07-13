@@ -30,12 +30,10 @@ def main():
 
     # --- ETAPA 1: Criar o mapa de busca (Prompt -> Answer) ---
     print(f"\nCarregando o dataset original '{DATASET_NAME}' para criar o mapa de busca...")
-    # Usar streaming=True pode ser mais rápido se a memória for um problema, mas para este tamanho é ok.
     full_dataset = load_dataset(DATASET_NAME, split="train")
 
     print("Construindo o mapa de busca 'prompt' -> 'answer_nodes'. Isso pode levar um minuto...")
     prompt_to_answer_map = {}
-    # Usamos tqdm para mostrar uma barra de progresso durante esta operação longa
     for item in tqdm(full_dataset, desc="Mapeando gabaritos"):
         prompt_to_answer_map[item['prompt']] = item['answer_nodes']
 
@@ -46,8 +44,17 @@ def main():
     augmented_results = []
     found_count = 0
     not_found_count = 0
+    missing_execution_time_count = 0  # Contador para depuração
 
     for result in tqdm(collected_results, desc="Enriquecendo resultados"):
+
+        # --- DEBUG: Verificação da presença de 'execution_time_seconds' ---
+        if 'execution_time_seconds' not in result:
+            missing_execution_time_count += 1
+            # Opcional: imprimir o prompt para identificar a entrada
+            # print(f"AVISO DEBUG: 'execution_time_seconds' não encontrado para o prompt: {result.get('prompt', 'N/A')[:50]}...")
+        # ------------------------------------------------------------------
+
         prompt = result.get('prompt')
 
         # Encontra a resposta no mapa
@@ -63,6 +70,7 @@ def main():
             not_found_count += 1
             print(f"AVISO: O prompt a seguir não foi encontrado no mapa de busca:\n{prompt[:100]}...")
 
+        # O 'result' (agora com 'answer_nodes' e todos os campos originais) é adicionado
         augmented_results.append(result)
 
     # --- ETAPA 3: Salvar o novo arquivo ---
@@ -75,6 +83,9 @@ def main():
     print(f"Gabaritos encontrados e adicionados: {found_count}")
     if not_found_count > 0:
         print(f"AVISO: {not_found_count} prompts não foram encontrados no dataset original.")
+    if missing_execution_time_count > 0:
+        print(
+            f"AVISO DEBUG: {missing_execution_time_count} resultados não tinham 'execution_time_seconds' no arquivo de entrada.")
 
 
 if __name__ == "__main__":

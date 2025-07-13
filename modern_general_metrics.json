@@ -1,25 +1,32 @@
 {
     "total_items_in_file": 200,
-    "parsing_success_rate": 0.905,
-    "items_with_failed_parsing": 19,
+    "items_with_failed_parsing": 0,
+    "parsing_success_rate": 1.0,
+    "items_with_missing_execution_time": 0,
     "overall": {
-        "evaluated_items": 181,
-        "average_precision": 0.2137,
-        "average_recall": 0.191,
-        "average_f1_score": 0.1864
+        "evaluated_items": 200,
+        "average_precision": 0.2027,
+        "average_recall": 0.1893,
+        "average_f1_score": 0.1783,
+        "total_execution_time_seconds": 1295.39,
+        "average_execution_time_seconds": 6.4769
     },
     "by_problem_type": {
         "bfs": {
-            "evaluated_items": 84,
-            "average_precision": 0.179,
-            "average_recall": 0.1871,
-            "average_f1_score": 0.1624
+            "evaluated_items": 100,
+            "average_precision": 0.1638,
+            "average_recall": 0.145,
+            "average_f1_score": 0.1339,
+            "total_execution_time_seconds": 744.79,
+            "average_execution_time_seconds": 7.4479
         },
         "parents": {
-            "evaluated_items": 97,
-            "average_precision": 0.2438,
-            "average_recall": 0.1944,
-            "average_f1_score": 0.2072
+            "evaluated_items": 100,
+            "average_precision": 0.2417,
+            "average_recall": 0.2335,
+            "average_f1_score": 0.2227,
+            "total_execution_time_seconds": 550.6,
+            "average_execution_time_seconds": 5.506
         }
     }
 }

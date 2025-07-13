@@ -63,6 +63,7 @@ def main():
     # Nomes de arquivo fixos
     input_filename = "graphwalks_results.jsonl"
     output_filename = "graphwalks_results_with_metrics.jsonl"
+    general_metrics_filename = "graphwalks_general_metrics.json" # Novo arquivo para métricas gerais
 
     # Verifica se o arquivo de entrada existe
     if not os.path.exists(input_filename):
@@ -71,7 +72,8 @@ def main():
         return
 
     print(f"Lendo resultados de: '{input_filename}'")
-    print(f"Salvando resultados com métricas em: '{output_filename}'")
+    print(f"Salvando resultados com métricas individuais em: '{output_filename}'")
+    print(f"Salvando métricas gerais em: '{general_metrics_filename}'")
 
     total_precision = 0
     total_recall = 0
@@ -112,13 +114,34 @@ def main():
 
     print("\nProcessamento concluído.")
 
-    # Exibe as médias gerais
+    # Exibe e salva as médias gerais
     if item_count > 0:
+        avg_precision = total_precision / item_count
+        avg_recall = total_recall / item_count
+        avg_f1 = total_f1 / item_count
+
+        general_metrics = {
+            "average_precision": avg_precision,
+            "average_recall": avg_recall,
+            "average_f1_score": avg_f1,
+            "total_items_processed": item_count
+        }
+
         print("\n--- Métricas Médias Gerais ---")
-        print(f"Precisão Média: {total_precision / item_count:.4f}")
-        print(f"Recall Médio:   {total_recall / item_count:.4f}")
-        print(f"F1-Score Médio: {total_f1 / item_count:.4f}")
+        print(f"Precisão Média: {avg_precision:.4f}")
+        print(f"Recall Médio:   {avg_recall:.4f}")
+        print(f"F1-Score Médio: {avg_f1:.4f}")
         print("----------------------------")
+
+        # Salva as métricas gerais em um arquivo JSON
+        try:
+            with open(general_metrics_filename, 'w', encoding='utf-8') as gm_file:
+                json.dump(general_metrics, gm_file, indent=4)
+            print(f"Métricas gerais salvas em '{general_metrics_filename}'")
+        except IOError as e:
+            print(f"Erro ao salvar métricas gerais em '{general_metrics_filename}': {e}")
+    else:
+        print("Nenhum item foi processado para calcular as métricas médias.")
 
 
 main()
