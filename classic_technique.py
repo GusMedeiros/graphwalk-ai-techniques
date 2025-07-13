@@ -48,13 +48,11 @@ def executar_operacao_do_prompt(prompt_text):
     Faz o parsing de um prompt, executa a operação de grafo e retorna a lista de nós.
     Retorna uma string de erro se o parsing falhar.
     """
-    # CORREÇÃO 1: Isolar a seção do problema real, ignorando o bloco de exemplo.
     try:
         problem_section = prompt_text.split("<end example>")[1]
     except IndexError:
         return "Erro de Parsing: Marcação '<end example>' não encontrada."
 
-    # A partir daqui, fazemos o parsing dentro da 'problem_section'
     try:
         graph_section = problem_section.split("The graph has the following edges:\n")[1].split("\n\n\nOperation:")[0]
         graph = collections.defaultdict(list)
@@ -88,12 +86,13 @@ def executar_operacao_do_prompt(prompt_text):
 
 
 # ==============================================================================
-# 2. Função Principal para Processar o Dataset (com saída corrigida)
+# 2. Função Principal para Processar o Dataset (com medição de tempo por entrada)
 # ==============================================================================
 
 def main():
     """
-    Carrega o dataset, processa cada prompt com capacidade de retomada e salva os resultados.
+    Carrega o dataset, processa cada prompt com capacidade de retomada, mede o tempo de
+    execução de cada um e salva os resultados.
     """
     output_filename = "graphwalks_results.jsonl"
 
@@ -113,23 +112,29 @@ def main():
     dataset_to_process = islice(dataset, processed_count, None)
 
     print("Iniciando o processamento dos prompts...")
-    start_time = time.time()
+    total_start_time = time.time() # Mede o tempo total da execução
 
     with open(output_filename, 'a', encoding='utf-8') as f:
         for index, example in enumerate(dataset_to_process, start=processed_count):
             prompt = example['prompt']
 
-            # Executa a nossa lógica
+            # <--- ALTERAÇÃO: Medição de tempo para uma única entrada ---
+            entry_start_time = time.time()
             returned_nodes = executar_operacao_do_prompt(prompt)
+            entry_end_time = time.time()
+            execution_time_s = entry_end_time - entry_start_time
+            # <--- FIM DA ALTERAÇÃO ---
 
-            # CORREÇÃO 2: O campo 'output' agora armazena a lista diretamente.
+            # <--- ALTERAÇÃO: Adiciona o campo de tempo de execução ao resultado ---
             result_entry = {
                 "id": index,
                 "problem_type": example['problem_type'],
                 "prompt": prompt,
                 "output": returned_nodes,
-                "answer_nodes": example['answer_nodes']
+                "answer_nodes": example['answer_nodes'],
+                "execution_time_s": execution_time_s # Novo campo com o tempo em segundos
             }
+            # <--- FIM DA ALTERAÇÃO ---
 
             # SALVAMENTO INCREMENTAL
             f.write(json.dumps(result_entry) + '\n')
@@ -137,7 +142,7 @@ def main():
 
             # PRINT DE PROGRESSO
             if (index + 1) % 100 == 0:
-                elapsed_time = time.time() - start_time
+                elapsed_time = time.time() - total_start_time
                 print(
                     f"--- Progresso: {index + 1} exemplos processados. Último salvo: id={index}. Tempo decorrido: {elapsed_time:.2f}s ---")
 
